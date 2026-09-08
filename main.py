@@ -4,7 +4,6 @@ from bs4 import BeautifulSoup
 
 app = FastAPI()
 
-# Diccionario con los grupos de URLs
 URL_GROUPS = {
     "FX": [
         "https://tradingeconomics.com/united-states/currency",
@@ -77,20 +76,20 @@ URL_GROUPS = {
 def scrape_url(url: str):
     headers = {'User-Agent': 'Mozilla/5.0'}
     try:
-        response = requests.get(url, headers=headers, timeout=8)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.content, "html.parser")
-        div_content = soup.find("div", {"id": "historical-desc"})
-        if div_content:
-            h2_content = div_content.find("h2", {"id": "description"})
-            if h2_content:
-                return h2_content.get_text(strip=True)
-    except Exception as e:
-        print(f"Error procesando {url}: {e}")
+        response = requests.get(url, headers=headers, timeout=3)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.content, "html.parser")
+            div_content = soup.find("div", {"id": "historical-desc"})
+            if div_content:
+                h2_content = div_content.find("h2", {"id": "description"})
+                if h2_content:
+                    return h2_content.get_text(strip=True)
+    except Exception:
+        pass
     return None
 
 def process_category(category_key: str):
-    urls = URL_GROUPS.get(category_key, [])
+    urls = URL_GROUPS.get(category_key, [])[:4] # Limita a las primeras 4 URLs para no exceder tiempo
     results = [f"📊 *REPORTE DE {category_key}*\n"]
     
     for url in urls:
@@ -99,7 +98,7 @@ def process_category(category_key: str):
             results.append(f"• {text}\n")
     
     if len(results) == 1:
-        return f"No se pudo obtener información para {category_key} en este momento."
+        return f"Procesando solicitud de {category_key}... intenta de nuevo en unos segundos."
         
     return "\n".join(results)
 
@@ -107,28 +106,26 @@ def process_category(category_key: str):
 async def whatsapp_webhook(Body: str = Form('')):
     command = Body.strip().upper()
     
-    if command in URL_GROUPS:
-        reply_message = process_category(command)
-    elif command == "TODOS":
-        all_reports = []
-        for cat in URL_GROUPS.keys():
-            all_reports.append(process_category(cat))
+    matched_key = None
+    for key in URL_GROUPS.keys():
+        if key in command:
+            matched_key = key
+            break
+            
+    if matched_key:
+        reply_message = process_category(matched_key)
+    elif "TODOS" in command:
+        all_reports = [process_category(cat) for cat in URL_GROUPS.keys()]
         reply_message = "\n---\n".join(all_reports)
     else:
         reply_message = (
-            "🤖 *Bot Financiero*\n\n"
-            "Envía una de las siguientes opciones para recibir el reporte:\n\n"
-            "• *FX*\n"
-            "• *FIX INCOME*\n"
-            "• *COMMODITIES*\n"
-            "• *EQUITIES*\n"
-            "• *TODOS*"
+            "🤖 *Bot Financiero Activado*\n\n"
+            "Responde con uno de los siguientes temas:\n"
+            "• FX\n"
+            "• COMMODITIES\n"
+            "• EQUITIES\n"
+            "• FIX INCOME"
         )
 
-    # Formatear respuesta en XML TwiML para Twilio
-    twiml_response = f"""<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Message>{reply_message}</Message>
-</Response>"""
-
+    twiml_response = f'<?xml version="1.0" encoding="UTF-8"?><Response><Message>{reply_message}</Message></Response>'
     return Response(content=twiml_response, media_type="application/xml")
