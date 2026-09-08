@@ -1,12 +1,24 @@
 from fastapi import FastAPI, Form, Response
+import yfinance as yf
 
 app = FastAPI()
 
 @app.post("/whatsapp")
 async def whatsapp_webhook(Body: str = Form('')):
-    # Respuesta ultra simple en TwiML
-    twiml_response = """<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Message>¡Hola! Tu bot financiero está conectado correctamente. 🚀</Message>
-</Response>"""
-    return Response(content=twiml_response, media_type="text/xml")
+    command = Body.strip().upper()
+    
+    # Evaluación del comando
+    if "FX" in command:
+        try:
+            # Consultamos un solo activo para probar velocidad
+            ticker = yf.Ticker("COP=X")
+            precio = ticker.fast_info['lastPrice']
+            mensaje = f"💵 *USD/COP*: ${precio:,.2f} COP"
+        except Exception as e:
+            mensaje = f"⚠️ Error consultando precio: {e}"
+    else:
+        mensaje = "🤖 *Bot Financiero*\n\nEscribe *FX* para ver el precio del Dólar."
+
+    # TwiML directo
+    twiml = f'<?xml version="1.0" encoding="UTF-8"?><Response><Message>{mensaje}</Message></Response>'
+    return Response(content=twiml, media_type="application/xml")
