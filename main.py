@@ -47,7 +47,12 @@ def get_market_data(category_key):
     except Exception as e:
         return f"Error al consultar datos: {e}"
 
-    return "\n".join(results)
+    full_text = "\n".join(results)
+    
+    # Garantiza que nunca supere los 1500 caracteres (Límite seguro de Twilio)
+    if len(full_text) > 1500:
+        return full_text[:1450] + "\n\n...(reporte acortado)"
+    return full_text
 
 @app.post("/whatsapp")
 async def whatsapp_webhook(Body: str = Form('')):
@@ -71,6 +76,10 @@ async def whatsapp_webhook(Body: str = Form('')):
             "• *EQUITIES*\n"
             "• *FIX INCOME*"
         )
+
+    # Limite estricto de seguridad para Twilio
+    if len(reply_text) > 1500:
+        reply_text = reply_text[:1450] + "..."
 
     resp.message(reply_text)
     return Response(content=str(resp), media_type="application/xml")
