@@ -1,5 +1,4 @@
 from fastapi import FastAPI, Form, Response
-from twilio.twiml.messaging_response import MessagingResponse
 import yfinance as yf
 
 app = FastAPI()
@@ -25,24 +24,6 @@ SYMBOLS = {
     }
 }
 
-def get_market_data(category_key):
-    items = SYMBOLS.get(category_key, {})
-    lines = [f"*MERCADO {category_key}*"]
-    
-    tickers_string = " ".join(items.values())
-    try:
-        data = yf.Tickers(tickers_string)
-        for label, ticker in items.items():
-            try:
-                price = data.tickers[ticker].fast_info['lastPrice']
-                lines.append(f"{label}: {price:,.2f}")
-            except Exception:
-                lines.append(f"{label}: N/A")
-    except Exception as e:
-        return f"Error: {e}"
-
-    return "\n".join(lines)
-
 @app.post("/whatsapp")
 async def whatsapp_webhook(Body: str = Form('')):
     command = Body.strip().upper()
@@ -54,15 +35,23 @@ async def whatsapp_webhook(Body: str = Form('')):
             break
             
     if matched_key:
-        reply_text = get_market_data(matched_key)
+        items = SYMBOLS[matched_key]
+        lines = [f"*MERCADO {matched_key}*"]
+        tickers_str = " ".join(items.values())
+        try:
+            data = yf.Tickers(tickers_str)
+            for label, ticker in items.items():
+                try:
+                    price = data.tickers[ticker].fast_info['lastPrice']
+                    lines.append(f"• {label}: {price:,.2f}")
+                except Exception:
+                    lines.append(f"• {label}: N/A")
+        except Exception as e:
+            lines.append(f"Error: {e}")
+        reply_text = "\n".join(lines)
     else:
-        reply_text = "Bot Financiero. Envia: FX, COMMODITIES, EQUITIES o FIX INCOME"
+        reply_text = "Bot Financiero Activo. Opciones: FX, COMMODITIES, EQUITIES, FIX INCOME"
 
-    # Límite ultracorto para evitar fallo de concatenación SMS/WhatsApp
-    if len(reply_text) > 300:
-        reply_text = reply_text[:290] + "..."
-
-    resp = MessagingResponse()
-    resp.message(reply_text)
-    
-    return Response(content=str(resp), media_type="application/xml")
+    # XML TwiML ultra limpio sin saltos extra
+    twiml = f'<?xml version="1.0" encoding="UTF-8"?><Response><Message>{reply_text}</Message></Response>'
+    return Response(content=twiml, media_type="application/xml")
