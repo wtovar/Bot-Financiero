@@ -1,9 +1,9 @@
 from fastapi import FastAPI, Form, Response
+from twilio.twiml.messaging_response import MessagingResponse
 import yfinance as yf
 
 app = FastAPI()
 
-# Mapeo de símbolos financieros reales
 SYMBOLS = {
     "FX": {
         "EUR/USD": "EURUSD=X",
@@ -27,8 +27,7 @@ SYMBOLS = {
     },
     "FIX INCOME": {
         "US Treasury 10Y": "^TNX",
-        "US Treasury 30Y": "^TYX",
-        "US Treasury 5Y": "^FVX"
+        "US Treasury 30Y": "^TYX"
     }
 }
 
@@ -46,13 +45,14 @@ def get_market_data(category_key):
             except Exception:
                 results.append(f"• *{label}*: No disponible")
     except Exception as e:
-        return f"Error consultando mercado: {e}"
+        return f"Error al consultar datos: {e}"
 
     return "\n".join(results)
 
 @app.post("/whatsapp")
 async def whatsapp_webhook(Body: str = Form('')):
     command = Body.strip().upper()
+    resp = MessagingResponse()
     
     matched_key = None
     for key in SYMBOLS.keys():
@@ -61,9 +61,9 @@ async def whatsapp_webhook(Body: str = Form('')):
             break
             
     if matched_key:
-        reply = get_market_data(matched_key)
+        reply_text = get_market_data(matched_key)
     else:
-        reply = (
+        reply_text = (
             "🤖 *Bot Financiero*\n\n"
             "Envía una de las siguientes opciones:\n\n"
             "• *FX*\n"
@@ -72,5 +72,5 @@ async def whatsapp_webhook(Body: str = Form('')):
             "• *FIX INCOME*"
         )
 
-    twiml = f'<?xml version="1.0" encoding="UTF-8"?><Response><Message>{reply}</Message></Response>'
-    return Response(content=twiml, media_type="application/xml")
+    resp.message(reply_text)
+    return Response(content=str(resp), media_type="application/xml")
