@@ -8,32 +8,26 @@ SYMBOLS = {
     "FX": {
         "EUR/USD": "EURUSD=X",
         "GBP/USD": "GBPUSD=X",
-        "USD/JPY": "JPY=X",
         "USD/COP": "COP=X",
-        "USD/MXN": "MXN=X",
         "Bitcoin": "BTC-USD"
     },
     "COMMODITIES": {
-        "Petróleo WTI": "CL=F",
+        "Petroleo WTI": "CL=F",
         "Oro": "GC=F",
-        "Cobre": "HG=F",
-        "Café": "KC=F"
+        "Cafe": "KC=F"
     },
     "EQUITIES": {
         "S&P 500": "^GSPC",
-        "Dow Jones": "^DJI",
-        "Nasdaq": "^IXIC",
-        "Bovespa": "^BVSP"
+        "Nasdaq": "^IXIC"
     },
     "FIX INCOME": {
-        "US Treasury 10Y": "^TNX",
-        "US Treasury 30Y": "^TYX"
+        "US Treasury 10Y": "^TNX"
     }
 }
 
 def get_market_data(category_key):
     items = SYMBOLS.get(category_key, {})
-    results = [f"📊 *MERCADO {category_key}*\n"]
+    lines = [f"*MERCADO {category_key}*"]
     
     tickers_string = " ".join(items.values())
     try:
@@ -41,13 +35,13 @@ def get_market_data(category_key):
         for label, ticker in items.items():
             try:
                 price = data.tickers[ticker].fast_info['lastPrice']
-                results.append(f"• *{label}*: {price:,.2f}")
+                lines.append(f"{label}: {price:,.2f}")
             except Exception:
-                results.append(f"• *{label}*: No disponible")
+                lines.append(f"{label}: N/A")
     except Exception as e:
-        return f"Error al consultar datos: {e}"
+        return f"Error: {e}"
 
-    return "\n".join(results)
+    return "\n".join(lines)
 
 @app.post("/whatsapp")
 async def whatsapp_webhook(Body: str = Form('')):
@@ -62,19 +56,13 @@ async def whatsapp_webhook(Body: str = Form('')):
     if matched_key:
         reply_text = get_market_data(matched_key)
     else:
-        reply_text = (
-            "🤖 *Bot Financiero*\n\n"
-            "Opciones:\n"
-            "• FX\n"
-            "• COMMODITIES\n"
-            "• EQUITIES\n"
-            "• FIX INCOME"
-        )
+        reply_text = "Bot Financiero. Envia: FX, COMMODITIES, EQUITIES o FIX INCOME"
 
-    # CORTE DE SEGURIDAD ABSOLUTO (Máximo 800 caracteres)
-    if len(reply_text) > 800:
-        reply_text = reply_text[:750] + "\n\n...(texto recortado)"
+    # Límite ultracorto para evitar fallo de concatenación SMS/WhatsApp
+    if len(reply_text) > 300:
+        reply_text = reply_text[:290] + "..."
 
     resp = MessagingResponse()
     resp.message(reply_text)
+    
     return Response(content=str(resp), media_type="application/xml")
