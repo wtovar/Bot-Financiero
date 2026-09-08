@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Form, Response
 import requests
 from bs4 import BeautifulSoup
+import concurrent.futures
 
 app = FastAPI()
 
@@ -73,32 +74,35 @@ URL_GROUPS = {
     ]
 }
 
-def scrape_url(url: str):
+def fetch_data(url):
     headers = {'User-Agent': 'Mozilla/5.0'}
     try:
-        response = requests.get(url, headers=headers, timeout=3)
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.content, "html.parser")
-            div_content = soup.find("div", {"id": "historical-desc"})
-            if div_content:
-                h2_content = div_content.find("h2", {"id": "description"})
-                if h2_content:
-                    return h2_content.get_text(strip=True)
+        res = requests.get(url, headers=headers, timeout=2.5)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.content, "html.parser")
+            div = soup.find("div", {"id": "historical-desc"})
+            if div:
+                h2 = div.find("h2", {"id": "description"})
+                if h2:
+                    return h2.get_text(strip=True)
     except Exception:
         pass
     return None
 
-def process_category(category_key: str):
-    urls = URL_GROUPS.get(category_key, [])[:4] # Limita a las primeras 4 URLs para no exceder tiempo
-    results = [f"📊 *REPORTE DE {category_key}*\n"]
+def process_category(category_key):
+    urls = URL_GROUPS.get(category_key, [])[:5]  # Muestra los primeros 5 por velocidad
+    results = [f"📊 *REPORTE {category_key}*\n"]
     
-    for url in urls:
-        text = scrape_url(url)
+    # Procesa todas las páginas al mismo tiempo en paralelo
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        scraped_texts = list(executor.map(fetch_data, urls))
+        
+    for text in scraped_texts:
         if text:
             results.append(f"• {text}\n")
-    
+            
     if len(results) == 1:
-        return f"Procesando solicitud de {category_key}... intenta de nuevo en unos segundos."
+        return f"No se pudo obtener información de {category_key} en este momento."
         
     return "\n".join(results)
 
@@ -106,26 +110,23 @@ def process_category(category_key: str):
 async def whatsapp_webhook(Body: str = Form('')):
     command = Body.strip().upper()
     
-    matched_key = None
+    selected_key = None
     for key in URL_GROUPS.keys():
         if key in command:
-            matched_key = key
+            selected_key = key
             break
             
-    if matched_key:
-        reply_message = process_category(matched_key)
-    elif "TODOS" in command:
-        all_reports = [process_category(cat) for cat in URL_GROUPS.keys()]
-        reply_message = "\n---\n".join(all_reports)
+    if selected_key:
+        reply = process_category(selected_key)
     else:
-        reply_message = (
-            "🤖 *Bot Financiero Activado*\n\n"
-            "Responde con uno de los siguientes temas:\n"
-            "• FX\n"
-            "• COMMODITIES\n"
-            "• EQUITIES\n"
-            "• FIX INCOME"
+        reply = (
+            "🤖 *Bot Financiero*\n\n"
+            "Envía una de las siguientes opciones para recibir el reporte:\n\n"
+            "• *FX*\n"
+            "• *FIX INCOME*\n"
+            "• *COMMODITIES*\n"
+            "• *EQUITIES*"
         )
 
-    twiml_response = f'<?xml version="1.0" encoding="UTF-8"?><Response><Message>{reply_message}</Message></Response>'
-    return Response(content=twiml_response, media_type="application/xml")
+    twiml = f'<?xml version="1.0" encoding="UTF-8"?><Response><Message>{reply}</Message></Response>'
+    return Response(content=twiml, media_type="application/xml")
